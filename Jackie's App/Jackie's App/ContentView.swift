@@ -11,13 +11,14 @@ struct ContentView: View {
     @StateObject private var vm = QuoteViewModel()
     @State private var displayedQuote: Quote?
     @State private var opacity: Double = 1.0
+    @AppStorage("musicOn") private var musicOn = true   // persists across launches
 
     var body: some View {
         ZStack {
             AnimatedBackground()
 
             VStack(spacing: 40) {
-                // --- QUOTE AREA ---
+                // QUOTE AREA (unchanged)
                 ZStack {
                     if let q = displayedQuote {
                         VStack(spacing: 8) {
@@ -27,62 +28,67 @@ struct ContentView: View {
                                 .padding(.horizontal)
                                 .foregroundStyle(.white)
                                 .opacity(opacity)
-                            
+
                             Text(q.author.isEmpty ? "Unknown" : q.author)
                                 .font(.headline)
                                 .foregroundStyle(.white.opacity(0.8))
                                 .opacity(opacity)
                         }
-                        .frame(maxWidth: .infinity)
                     } else if vm.isLoading {
-                        ProgressView("Loading quote…")
-                            .foregroundStyle(.white)
-                    } else if let error = vm.errorMessage {
-                        Text(error)
-                            .foregroundStyle(.red)
+                        ProgressView("Loading quote…").foregroundStyle(.white)
                     } else {
                         Text("Tap the button for a quote.")
                             .foregroundStyle(.white.opacity(0.8))
                     }
                 }
-                // keep quote area height fixed to prevent jumps
                 .frame(height: 280)
 
-                // --- BUTTON AREA ---
-                Button(action: fadeToNewQuote) {
-                    Text("New Quote")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
+                // BUTTON + TOGGLE
+                VStack(spacing: 12) {
+                    Button(action: fadeToNewQuote) {
+                        Text("New Quote")
+                            .font(.headline)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                    }
+                    .buttonStyle(GlassButtonStyle())
+                    .padding(.horizontal, 60)
+
+                    Toggle("Ambient Music", isOn: $musicOn)
+                        .tint(.white)
+                        .foregroundColor(.white)
+                        .frame(width: 200)
+                        .onChange(of: musicOn) { on in
+                            on ? AudioManager.shared.startAmbientLoop()
+                               : AudioManager.shared.stopAmbient()
+                        }
                 }
-                .buttonStyle(GlassButtonStyle())
-                .padding(.horizontal, 60)
             }
             .padding()
         }
         .onAppear {
-            Task {
-                await vm.load()
-                displayedQuote = vm.quote
-            }
+            Task { await vm.load(); displayedQuote = vm.quote }
+            if musicOn { AudioManager.shared.startAmbientLoop() }
         }
+        .onDisappear { AudioManager.shared.stopAmbient() }
     }
 
     private func fadeToNewQuote() {
-        withAnimation(.easeInOut(duration: 1.2)) {
-            opacity = 0.0
-        }
+        // Haptic only; music no longer touched here
+        let gen = UIImpactFeedbackGenerator(style: .medium)
+        gen.prepare(); gen.impactOccurred()
 
+        withAnimation(.easeInOut(duration: 1.2)) { opacity = 0.0 }
         Task {
             try? await Task.sleep(nanoseconds: 1_200_000_000)
             await vm.load()
             displayedQuote = vm.quote
-            withAnimation(.easeInOut(duration: 1.2)) {
-                opacity = 1.0
-            }
+            withAnimation(.easeInOut(duration: 1.2)) { opacity = 1.0 }
         }
     }
 }
+
+
 
 // MARK: - Custom iOS-style button
 struct GlassButtonStyle: ButtonStyle {
